@@ -5,20 +5,26 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.media.MediaPlayer
 import android.os.Bundle
-import android.os.IBinder
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
+import com.example.ai.gemini.OpenAITtsClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.Locale
 
-class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
+class JarvisVoiceService : Service() {
 
     private var speechRecognizer: SpeechRecognizer? = null
-    private lateinit var textToSpeech: TextToSpeech
+    private var mediaPlayer: MediaPlayer? = null
+
+    private lateinit var ttsClient: OpenAITtsClient
 
     private var waitingForCommand = false
     private var isSpeaking = false
@@ -30,7 +36,10 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         createNotificationChannel()
 
-        val notification = Notification.Builder(this, "jarvis_channel")
+        val notification = Notification.Builder(
+            this,
+            "jarvis_channel"
+        )
             .setContentTitle("JARVIS aktif")
             .setContentText("“Jarvis” komutunu bekliyor.")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -38,7 +47,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         startForeground(1001, notification)
 
-        textToSpeech = TextToSpeech(this, this)
+        ttsClient = OpenAITtsClient(this)
     }
 
     private fun startWakeWordListening() {
@@ -47,16 +56,18 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun startCommandListening() {
+
         waitingForCommand = true
 
-        speak("Sizi dinliyorum.")
+        speak("Efendim?")
 
-        // JARVIS konuşurken mikrofonu açma.
         handler.postDelayed({
-            if (waitingForCommand) {
+
+            if (waitingForCommand && !isSpeaking) {
                 startRecognition()
             }
-        }, 2500)
+
+        }, 500)
     }
 
     private fun startRecognition() {
@@ -70,6 +81,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         }
 
         try {
+
             speechRecognizer?.cancel()
             speechRecognizer?.destroy()
 
@@ -81,14 +93,16 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                     override fun onResults(results: Bundle?) {
 
-                        val texts = results?.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION
-                        )
+                        val texts =
+                            results?.getStringArrayList(
+                                SpeechRecognizer.RESULTS_RECOGNITION
+                            )
 
-                        val spokenText = texts
-                            ?.firstOrNull()
-                            ?.trim()
-                            ?.lowercase(Locale("tr", "TR"))
+                        val spokenText =
+                            texts
+                                ?.firstOrNull()
+                                ?.trim()
+                                ?.lowercase(Locale("tr", "TR"))
 
                         if (spokenText.isNullOrBlank()) {
                             scheduleRestart()
@@ -98,8 +112,11 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                         if (!waitingForCommand) {
 
                             if (spokenText.contains("jarvis")) {
+
                                 startCommandListening()
+
                             } else {
+
                                 scheduleRestart()
                             }
 
@@ -109,6 +126,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                                 this@JarvisVoiceService,
                                 MainActivity::class.java
                             ).apply {
+
                                 flags =
                                     Intent.FLAG_ACTIVITY_NEW_TASK or
                                     Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -124,15 +142,14 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                             waitingForCommand = false
 
                             handler.postDelayed({
+
                                 startWakeWordListening()
+
                             }, 1500)
                         }
                     }
 
                     override fun onError(error: Int) {
-
-                        // Timeout / sessizlik durumunda
-                        // hemen mikrofonu yeniden açma.
                         scheduleRestart()
                     }
 
@@ -142,7 +159,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                     override fun onRmsChanged(rmsdB: Float) {}
 
-                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onBufferReceived(
+                        buffer: ByteArray?
+                    ) {}
 
                     override fun onEndOfSpeech() {}
 
@@ -157,51 +176,51 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
             )
 
-            val intent = Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-            ).apply {
+            val intent =
+                Intent(
+                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                ).apply {
 
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
 
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE,
-                    "tr-TR"
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE,
+                        "tr-TR"
+                    )
 
-                putExtra(
-                    RecognizerIntent.EXTRA_MAX_RESULTS,
-                    1
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_MAX_RESULTS,
+                        1
+                    )
 
-                putExtra(
-                    RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                    false
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                        false
+                    )
 
-                // Kullanıcının daha rahat konuşabilmesi için
-                // sessizlik sürelerini uzat.
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                    1500L
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                        1500L
+                    )
 
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    2500L
-                )
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        2500L
+                    )
 
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    2000L
-                )
-            }
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        2000L
+                    )
+                }
 
             speechRecognizer?.startListening(intent)
 
         } catch (e: Exception) {
+
             scheduleRestart()
         }
     }
@@ -221,65 +240,80 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun speak(text: String) {
 
-        if (::textToSpeech.isInitialized) {
+        if (isSpeaking) return
 
-            isSpeaking = true
+        isSpeaking = true
 
-            textToSpeech.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "JARVIS_RESPONSE"
-            )
-        }
-    }
+        CoroutineScope(Dispatchers.Main).launch {
 
-    override fun onInit(status: Int) {
+            val audioFile =
+                ttsClient.generateSpeech(text)
 
-        if (status == TextToSpeech.SUCCESS) {
+            if (audioFile == null) {
 
-            textToSpeech.language =
-                Locale.forLanguageTag("tr-TR")
+                isSpeaking = false
+                return@launch
+            }
 
-            textToSpeech.setOnUtteranceProgressListener(
-                object :
-                    android.speech.tts.UtteranceProgressListener() {
+            try {
 
-                    override fun onStart(
-                        utteranceId: String?
-                    ) {
-                        isSpeaking = true
-                    }
+                mediaPlayer?.release()
 
-                    override fun onDone(
-                        utteranceId: String?
-                    ) {
-                        isSpeaking = false
+                mediaPlayer =
+                    MediaPlayer().apply {
 
-                        if (waitingForCommand) {
-                            handler.postDelayed({
-                                startRecognition()
-                            }, 300)
+                        setDataSource(
+                            audioFile.absolutePath
+                        )
+
+                        setOnCompletionListener {
+
+                            isSpeaking = false
+
+                            release()
+
+                            mediaPlayer = null
+
+                            if (waitingForCommand) {
+
+                                handler.postDelayed({
+
+                                    startRecognition()
+
+                                }, 300)
+                            }
                         }
+
+                        setOnErrorListener { _, _, _ ->
+
+                            isSpeaking = false
+
+                            release()
+
+                            mediaPlayer = null
+
+                            true
+                        }
+
+                        prepare()
+                        start()
                     }
 
-                    override fun onError(
-                        utteranceId: String?
-                    ) {
-                        isSpeaking = false
-                    }
-                }
-            )
+            } catch (e: Exception) {
+
+                isSpeaking = false
+            }
         }
     }
 
     private fun createNotificationChannel() {
 
-        val channel = NotificationChannel(
-            "jarvis_channel",
-            "JARVIS Sesli Asistan",
-            NotificationManager.IMPORTANCE_LOW
-        )
+        val channel =
+            NotificationChannel(
+                "jarvis_channel",
+                "JARVIS Sesli Asistan",
+                NotificationManager.IMPORTANCE_LOW
+            )
 
         getSystemService(
             NotificationManager::class.java
@@ -293,10 +327,9 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         speechRecognizer?.cancel()
         speechRecognizer?.destroy()
 
-        if (::textToSpeech.isInitialized) {
-            textToSpeech.stop()
-            textToSpeech.shutdown()
-        }
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
 
         super.onDestroy()
     }
