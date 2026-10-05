@@ -1,4 +1,4 @@
-package com.example.ai.openai
+package com.example.ai.gemini
 
 import android.util.Log
 import com.example.BuildConfig
