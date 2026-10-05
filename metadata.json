@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS",
+  "description": "YouTube kanalı için kişisel Türkçe yapay zeka sesli asistanı ve vaka analiz merkezi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
