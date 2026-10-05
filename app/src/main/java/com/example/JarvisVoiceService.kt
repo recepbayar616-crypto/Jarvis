@@ -32,16 +32,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             textToSpeech.language = Locale("tr", "TR")
-
-            val voices = textToSpeech.voices
-            val maleVoice = voices.firstOrNull {
-                it.locale.language == "tr" &&
-                it.name.contains("male", ignoreCase = true)
-            }
-
-            if (maleVoice != null) {
-                textToSpeech.voice = maleVoice
-            }
         }
     }
 
@@ -61,8 +51,8 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             NotificationManager.IMPORTANCE_LOW
         )
 
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     override fun onDestroy() {
