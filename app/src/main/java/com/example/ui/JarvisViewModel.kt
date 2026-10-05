@@ -3,7 +3,7 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ai.gemini.GeminiClient
+import com.example.ai.gemini.OpenAIClient
 import com.example.ai.gemini.JarvisAiResult
 import com.example.ai.gemini.JarvisToolExecutor
 import com.example.data.local.AppDatabase
@@ -30,7 +30,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val preferences = JarvisPreferences(application)
     val youTubeRepository = YouTubeRepository(dao, preferences)
     private val toolExecutor = JarvisToolExecutor(youTubeRepository, dao)
-    private val geminiClient = GeminiClient(toolExecutor)
+    private val openAIClient = OpenAIClient(toolExecutor)
 
     val channel: StateFlow<ChannelEntity?> = youTubeRepository.channelFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -127,7 +127,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             )
 
             voiceManager.setThinking()
-            val result: JarvisAiResult = geminiClient.processUserVoiceInput(input)
+            val result: JarvisAiResult = openAIClient.processUserVoiceInput(input)
 
             _lastJarvisReply.value = result.replyText
 
