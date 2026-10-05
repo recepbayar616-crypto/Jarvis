@@ -2,6 +2,7 @@ package com.example.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -33,60 +34,55 @@ class JarvisVoiceManager(
 ) : RecognitionListener {
 
     private val _voiceState = MutableStateFlow(AssistantVoiceState.IDLE)
-    val voiceState: StateFlow<AssistantVoiceState> = _voiceState.asStateFlow()
+    val voiceState: StateFlow<AssistantVoiceState> =
+        _voiceState.asStateFlow()
 
     private val _audioRms = MutableStateFlow(0f)
-    val audioRms: StateFlow<Float> = _audioRms.asStateFlow()
+    val audioRms: StateFlow<Float> =
+        _audioRms.asStateFlow()
 
     private val _recognizedText = MutableStateFlow("")
-    val recognizedText: StateFlow<String> = _recognizedText.asStateFlow()
+    val recognizedText: StateFlow<String> =
+        _recognizedText.asStateFlow()
 
     private val _statusMessage =
         MutableStateFlow("JARVIS Çevrimiçi")
+
     val statusMessage: StateFlow<String> =
         _statusMessage.asStateFlow()
 
     private var speechRecognizer: SpeechRecognizer? = null
-
-    private var mediaPlayer: android.media.MediaPlayer? = null
+    private var mediaPlayer: MediaPlayer? = null
 
     private val ttsClient =
         OpenAITtsClient(context.applicationContext)
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope =
+        CoroutineScope(Dispatchers.Main)
 
     private var speechJob: Job? = null
 
     fun startListening() {
-
         stopSpeaking()
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-
             _statusMessage.value =
                 "Ses tanıma bu cihazda desteklenmiyor."
-
             _voiceState.value =
                 AssistantVoiceState.ERROR
-
             return
         }
 
         try {
-
             speechRecognizer?.destroy()
 
             speechRecognizer =
-                SpeechRecognizer
-                    .createSpeechRecognizer(context)
-                    .apply {
-                        setRecognitionListener(this@JarvisVoiceManager)
-                    }
+                SpeechRecognizer.createSpeechRecognizer(context)
+
+            speechRecognizer?.setRecognitionListener(this)
 
             val intent =
-                Intent(
-                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                ).apply {
+                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
 
                     putExtra(
                         RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -139,16 +135,13 @@ class JarvisVoiceManager(
     }
 
     fun stopListening() {
-
         try {
-
             speechRecognizer?.stopListening()
 
             if (
                 _voiceState.value ==
                 AssistantVoiceState.LISTENING
             ) {
-
                 _voiceState.value =
                     AssistantVoiceState.IDLE
 
@@ -157,10 +150,47 @@ class JarvisVoiceManager(
             }
 
         } catch (e: Exception) {
-
             Log.e(
                 "VoiceManager",
                 "Stop listening error",
                 e
             )
         }
+    }
+
+    fun setThinking() {
+        _voiceState.value =
+            AssistantVoiceState.THINKING
+
+        _statusMessage.value =
+            "Analiz ediliyor..."
+    }
+
+    fun speak(text: String) {
+
+        if (
+            !preferences.isAutoSpeakEnabled() ||
+            text.isBlank()
+        ) {
+            _voiceState.value =
+                AssistantVoiceState.IDLE
+            return
+        }
+
+        stopListening()
+        speechJob?.cancel()
+
+        speechJob = scope.launch {
+
+            try {
+
+                _voiceState.value =
+                    AssistantVoiceState.SPEAKING
+
+                _statusMessage.value =
+                    "JARVIS Konuşuyor..."
+
+                val audioFile =
+                    ttsClient.generateSpeech(text)
+
+               
