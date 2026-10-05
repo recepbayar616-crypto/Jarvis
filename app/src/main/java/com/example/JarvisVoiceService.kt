@@ -6,8 +6,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
 import android.os.IBinder
+import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -21,6 +21,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     private lateinit var textToSpeech: TextToSpeech
 
     private var waitingForCommand = false
+    private var isSpeaking = false
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -38,8 +39,6 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
         startForeground(1001, notification)
 
         textToSpeech = TextToSpeech(this, this)
-
-        startWakeWordListening()
     }
 
     private fun startWakeWordListening() {
@@ -52,9 +51,12 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         speak("Sizi dinliyorum.")
 
+        // JARVIS konuşurken mikrofonu açma.
         handler.postDelayed({
-            startRecognition()
-        }, 1500)
+            if (waitingForCommand) {
+                startRecognition()
+            }
+        }, 2500)
     }
 
     private fun startRecognition() {
@@ -63,7 +65,12 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
             return
         }
 
+        if (isSpeaking) {
+            return
+        }
+
         try {
+            speechRecognizer?.cancel()
             speechRecognizer?.destroy()
 
             speechRecognizer =
@@ -74,18 +81,17 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                     override fun onResults(results: Bundle?) {
 
-                        val texts =
-                            results?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
-                            )
+                        val texts = results?.getStringArrayList(
+                            SpeechRecognizer.RESULTS_RECOGNITION
+                        )
 
-                        val spokenText =
-                            texts?.firstOrNull()
-                                ?.trim()
-                                ?.lowercase(Locale("tr", "TR"))
+                        val spokenText = texts
+                            ?.firstOrNull()
+                            ?.trim()
+                            ?.lowercase(Locale("tr", "TR"))
 
                         if (spokenText.isNullOrBlank()) {
-                            restartListening()
+                            scheduleRestart()
                             return
                         }
 
@@ -94,7 +100,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                             if (spokenText.contains("jarvis")) {
                                 startCommandListening()
                             } else {
-                                restartListening()
+                                scheduleRestart()
                             }
 
                         } else {
@@ -119,27 +125,24 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
                             handler.postDelayed({
                                 startWakeWordListening()
-                            }, 1000)
+                            }, 1500)
                         }
                     }
 
                     override fun onError(error: Int) {
-                        restartListening()
+
+                        // Timeout / sessizlik durumunda
+                        // hemen mikrofonu yeniden açma.
+                        scheduleRestart()
                     }
 
-                    override fun onReadyForSpeech(
-                        params: Bundle?
-                    ) {}
+                    override fun onReadyForSpeech(params: Bundle?) {}
 
                     override fun onBeginningOfSpeech() {}
 
-                    override fun onRmsChanged(
-                        rmsdB: Float
-                    ) {}
+                    override fun onRmsChanged(rmsdB: Float) {}
 
-                    override fun onBufferReceived(
-                        buffer: ByteArray?
-                    ) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
 
                     override fun onEndOfSpeech() {}
 
@@ -177,31 +180,50 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
                     RecognizerIntent.EXTRA_PARTIAL_RESULTS,
                     false
                 )
+
+                // Kullanıcının daha rahat konuşabilmesi için
+                // sessizlik sürelerini uzat.
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                    1500L
+                )
+
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    2500L
+                )
+
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    2000L
+                )
             }
 
             speechRecognizer?.startListening(intent)
 
         } catch (e: Exception) {
-            restartListening()
+            scheduleRestart()
         }
     }
 
-    private fun restartListening() {
+    private fun scheduleRestart() {
+
+        handler.removeCallbacksAndMessages(null)
 
         handler.postDelayed({
 
-            if (waitingForCommand) {
-                startCommandListening()
-            } else {
-                startWakeWordListening()
+            if (!isSpeaking) {
+                startRecognition()
             }
 
-        }, 1000)
+        }, 2500)
     }
 
     private fun speak(text: String) {
 
         if (::textToSpeech.isInitialized) {
+
+            isSpeaking = true
 
             textToSpeech.speak(
                 text,
@@ -215,8 +237,39 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
 
         if (status == TextToSpeech.SUCCESS) {
+
             textToSpeech.language =
                 Locale.forLanguageTag("tr-TR")
+
+            textToSpeech.setOnUtteranceProgressListener(
+                object :
+                    android.speech.tts.UtteranceProgressListener() {
+
+                    override fun onStart(
+                        utteranceId: String?
+                    ) {
+                        isSpeaking = true
+                    }
+
+                    override fun onDone(
+                        utteranceId: String?
+                    ) {
+                        isSpeaking = false
+
+                        if (waitingForCommand) {
+                            handler.postDelayed({
+                                startRecognition()
+                            }, 300)
+                        }
+                    }
+
+                    override fun onError(
+                        utteranceId: String?
+                    ) {
+                        isSpeaking = false
+                    }
+                }
+            )
         }
     }
 
@@ -237,6 +290,7 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         handler.removeCallbacksAndMessages(null)
 
+        speechRecognizer?.cancel()
         speechRecognizer?.destroy()
 
         if (::textToSpeech.isInitialized) {
