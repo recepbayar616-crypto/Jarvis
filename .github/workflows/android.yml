@@ -25,9 +25,13 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
-      - name: Build APK
+      - name: Create .env
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" > .env
+
+      - name: Build APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
