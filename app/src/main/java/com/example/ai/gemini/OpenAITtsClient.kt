@@ -1,6 +1,7 @@
 package com.example.ai.gemini
 
 import android.content.Context
+import android.util.Log
 import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,17 +11,23 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 class OpenAITtsClient(
     private val context: Context
 ) {
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     suspend fun generateSpeech(text: String): File? =
         withContext(Dispatchers.IO) {
 
             if (BuildConfig.OPENAI_API_KEY.isBlank()) {
+                Log.e("OpenAITtsClient", "OPENAI_API_KEY boş!")
                 return@withContext null
             }
 
@@ -64,11 +71,27 @@ class OpenAITtsClient(
                 client.newCall(request).execute().use { response ->
 
                     if (!response.isSuccessful) {
+
+                        val errorBody = response.body?.string()
+
+                        Log.e(
+                            "OpenAITtsClient",
+                            "TTS API HATASI | HTTP ${response.code} | $errorBody"
+                        )
+
                         return@withContext null
                     }
 
                     val bytes = response.body?.bytes()
-                        ?: return@withContext null
+
+                    if (bytes == null || bytes.isEmpty()) {
+                        Log.e(
+                            "OpenAITtsClient",
+                            "TTS başarılı görünüyor ama ses verisi boş!"
+                        )
+
+                        return@withContext null
+                    }
 
                     val file = File(
                         context.cacheDir,
@@ -77,10 +100,22 @@ class OpenAITtsClient(
 
                     file.writeBytes(bytes)
 
+                    Log.d(
+                        "OpenAITtsClient",
+                        "TTS başarılı. Dosya: ${file.absolutePath}"
+                    )
+
                     file
                 }
 
             } catch (e: Exception) {
+
+                Log.e(
+                    "OpenAITtsClient",
+                    "TTS bağlantı/uygulama hatası",
+                    e
+                )
+
                 null
             }
         }
