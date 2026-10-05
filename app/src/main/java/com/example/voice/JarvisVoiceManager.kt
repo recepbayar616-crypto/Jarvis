@@ -34,7 +34,9 @@ class JarvisVoiceManager(
 ) {
 
     private val _voiceState =
-        MutableStateFlow(AssistantVoiceState.IDLE)
+        MutableStateFlow(
+            AssistantVoiceState.IDLE
+        )
 
     val voiceState: StateFlow<AssistantVoiceState> =
         _voiceState.asStateFlow()
@@ -57,22 +59,34 @@ class JarvisVoiceManager(
     val statusMessage: StateFlow<String> =
         _statusMessage.asStateFlow()
 
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var mediaPlayer: MediaPlayer? = null
+    private var speechRecognizer:
+        SpeechRecognizer? = null
+
+    private var mediaPlayer:
+        MediaPlayer? = null
 
     private val ttsClient =
-        OpenAITtsClient(context.applicationContext)
+        OpenAITtsClient(
+            context.applicationContext
+        )
 
     private val scope =
-        CoroutineScope(Dispatchers.Main)
+        CoroutineScope(
+            Dispatchers.Main
+        )
 
-    private var speechJob: Job? = null
+    private var speechJob:
+        Job? = null
 
     fun startListening() {
 
         stopSpeaking()
 
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        if (
+            !SpeechRecognizer.isRecognitionAvailable(
+                context
+            )
+        ) {
 
             _voiceState.value =
                 AssistantVoiceState.ERROR
@@ -89,7 +103,9 @@ class JarvisVoiceManager(
             speechRecognizer?.destroy()
 
             speechRecognizer =
-                SpeechRecognizer.createSpeechRecognizer(context)
+                SpeechRecognizer.createSpeechRecognizer(
+                    context
+                )
 
             speechRecognizer?.setRecognitionListener(
                 object : RecognitionListener {
@@ -97,6 +113,7 @@ class JarvisVoiceManager(
                     override fun onReadyForSpeech(
                         params: Bundle?
                     ) {
+
                         _voiceState.value =
                             AssistantVoiceState.LISTENING
 
@@ -105,6 +122,7 @@ class JarvisVoiceManager(
                     }
 
                     override fun onBeginningOfSpeech() {
+
                         _statusMessage.value =
                             "Ses algılandı..."
                     }
@@ -112,12 +130,13 @@ class JarvisVoiceManager(
                     override fun onRmsChanged(
                         rmsdB: Float
                     ) {
-                        val normalized =
-                            ((rmsdB + 2f) / 12f)
-                                .coerceIn(0f, 1f)
 
                         _audioRms.value =
-                            normalized
+                            ((rmsdB + 2f) / 12f)
+                                .coerceIn(
+                                    0f,
+                                    1f
+                                )
                     }
 
                     override fun onBufferReceived(
@@ -127,8 +146,7 @@ class JarvisVoiceManager(
 
                     override fun onEndOfSpeech() {
 
-                        _audioRms.value =
-                            0f
+                        _audioRms.value = 0f
 
                         _voiceState.value =
                             AssistantVoiceState.THINKING
@@ -141,8 +159,7 @@ class JarvisVoiceManager(
                         error: Int
                     ) {
 
-                        _audioRms.value =
-                            0f
+                        _audioRms.value = 0f
 
                         _voiceState.value =
                             AssistantVoiceState.IDLE
@@ -171,8 +188,7 @@ class JarvisVoiceManager(
                         results: Bundle?
                     ) {
 
-                        _audioRms.value =
-                            0f
+                        _audioRms.value = 0f
 
                         val matches =
                             results?.getStringArrayList(
@@ -184,7 +200,9 @@ class JarvisVoiceManager(
                                 ?.firstOrNull()
                                 ?.trim()
 
-                        if (!text.isNullOrBlank()) {
+                        if (
+                            !text.isNullOrBlank()
+                        ) {
 
                             _recognizedText.value =
                                 text
@@ -193,9 +211,11 @@ class JarvisVoiceManager(
                                 AssistantVoiceState.THINKING
 
                             _statusMessage.value =
-                                "İşleniyor: \"$text\""
+                                "İşleniyor..."
 
-                            onVoiceInputRecognized(text)
+                            onVoiceInputRecognized(
+                                text
+                            )
 
                         } else {
 
@@ -219,7 +239,10 @@ class JarvisVoiceManager(
                         val text =
                             matches?.firstOrNull()
 
-                        if (!text.isNullOrBlank()) {
+                        if (
+                            !text.isNullOrBlank()
+                        ) {
+
                             _recognizedText.value =
                                 text
                         }
@@ -240,4 +263,320 @@ class JarvisVoiceManager(
 
                     putExtra(
                         RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                       
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE,
+                        "tr-TR"
+                    )
+
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                        "tr-TR"
+                    )
+
+                    putExtra(
+                        RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                        true
+                    )
+
+                    putExtra(
+                        RecognizerIntent.EXTRA_MAX_RESULTS,
+                        1
+                    )
+                }
+
+            speechRecognizer?.startListening(
+                recognitionIntent
+            )
+
+            _voiceState.value =
+                AssistantVoiceState.LISTENING
+
+            _statusMessage.value =
+                "Dinliyorum..."
+
+        } catch (
+            e: Exception
+        ) {
+
+            Log.e(
+                "JarvisVoiceManager",
+                "Ses tanıma başlatılamadı",
+                e
+            )
+
+            _voiceState.value =
+                AssistantVoiceState.ERROR
+
+            _statusMessage.value =
+                "Mikrofon başlatılamadı."
+        }
+    }
+
+    fun stopListening() {
+
+        try {
+            speechRecognizer?.stopListening()
+        } catch (
+            e: Exception
+        ) {
+
+            Log.e(
+                "JarvisVoiceManager",
+                "Dinleme durdurulamadı",
+                e
+            )
+        }
+
+        _audioRms.value = 0f
+
+        if (
+            _voiceState.value ==
+            AssistantVoiceState.LISTENING
+        ) {
+
+            _voiceState.value =
+                AssistantVoiceState.IDLE
+
+            _statusMessage.value =
+                "JARVIS Hazır"
+        }
+    }
+
+    fun setThinking() {
+
+        _voiceState.value =
+            AssistantVoiceState.THINKING
+
+        _statusMessage.value =
+            "Analiz ediliyor..."
+    }
+
+    fun speak(
+        text: String
+    ) {
+
+        if (
+            text.isBlank() ||
+            !preferences.isAutoSpeakEnabled()
+        ) {
+
+            _voiceState.value =
+                AssistantVoiceState.IDLE
+
+            return
+        }
+
+        stopListening()
+
+        speechJob?.cancel()
+
+        speechJob =
+            scope.launch {
+
+                try {
+
+                    _voiceState.value =
+                        AssistantVoiceState.SPEAKING
+
+                    _statusMessage.value =
+                        "JARVIS konuşuyor..."
+
+                    val audioFile =
+                        ttsClient.generateSpeech(
+                            text
+                        )
+
+                    if (
+                        audioFile == null
+                    ) {
+
+                        _voiceState.value =
+                            AssistantVoiceState.ERROR
+
+                        _statusMessage.value =
+                            "TTS hatası: Ses dosyası oluşturulamadı."
+
+                        return@launch
+                    }
+
+                    playAudio(
+                        audioFile
+                    )
+
+                } catch (
+                    e: Exception
+                ) {
+
+                    Log.e(
+                        "JarvisVoiceManager",
+                        "TTS hatası",
+                        e
+                    )
+
+                    _voiceState.value =
+                        AssistantVoiceState.ERROR
+
+                    _statusMessage.value =
+                        "TTS hatası: ${
+                            e.message
+                                ?: "Bilinmeyen hata"
+                        }"
+                }
+            }
+    }
+
+    private fun playAudio(
+        file: File
+    ) {
+
+        try {
+
+            mediaPlayer?.release()
+
+            val player =
+                MediaPlayer()
+
+            mediaPlayer =
+                player
+
+            player.setDataSource(
+                file.absolutePath
+            )
+
+            player.setOnCompletionListener {
+
+                _voiceState.value =
+                    AssistantVoiceState.IDLE
+
+                _statusMessage.value =
+                    "JARVIS Hazır"
+
+                player.release()
+
+                mediaPlayer = null
+
+                file.delete()
+            }
+
+            player.setOnErrorListener {
+                    _, _, _ ->
+
+                _voiceState.value =
+                    AssistantVoiceState.ERROR
+
+                _statusMessage.value =
+                    "Ses oynatılamadı."
+
+                player.release()
+
+                mediaPlayer = null
+
+                file.delete()
+
+                true
+            }
+
+            player.prepare()
+            player.start()
+
+        } catch (
+            e: Exception
+        ) {
+
+            Log.e(
+                "JarvisVoiceManager",
+                "Ses oynatma hatası",
+                e
+            )
+
+            try {
+                mediaPlayer?.release()
+            } catch (
+                _: Exception
+            ) {
+            }
+
+            mediaPlayer = null
+
+            file.delete()
+
+            _voiceState.value =
+                AssistantVoiceState.ERROR
+
+            _statusMessage.value =
+                "Ses oynatılamadı: ${
+                    e.message
+                        ?: "Bilinmeyen hata"
+                }"
+        }
+    }
+
+    fun stopSpeaking() {
+
+        speechJob?.cancel()
+        speechJob = null
+
+        try {
+            mediaPlayer?.stop()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        try {
+            mediaPlayer?.release()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        mediaPlayer = null
+
+        _voiceState.value =
+            AssistantVoiceState.IDLE
+
+        _statusMessage.value =
+            "JARVIS Hazır"
+    }
+
+    fun destroy() {
+
+        try {
+            speechRecognizer?.cancel()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        try {
+            speechRecognizer?.destroy()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        speechRecognizer = null
+
+        try {
+            mediaPlayer?.stop()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        try {
+            mediaPlayer?.release()
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        mediaPlayer = null
+
+        speechJob?.cancel()
+        speechJob = null
+    }
+}
