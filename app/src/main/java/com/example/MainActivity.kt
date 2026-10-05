@@ -29,16 +29,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
 
-        if (ContextCompat.checkSelfPermission(
+        handleVoiceCommand(intent)
+
+        if (
+            ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             startJarvisService()
         } else {
-            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            microphonePermission.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
         }
 
         setContent {
@@ -48,8 +54,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+
+        setIntent(intent)
+
+        handleVoiceCommand(intent)
+    }
+
+    private fun handleVoiceCommand(intent: Intent?) {
+
+        val command = intent?.getStringExtra(
+            "JARVIS_VOICE_COMMAND"
+        )
+
+        if (!command.isNullOrBlank()) {
+
+            viewModel.processVoiceInput(command)
+
+            intent.removeExtra(
+                "JARVIS_VOICE_COMMAND"
+            )
+        }
+    }
+
     private fun startJarvisService() {
-        val intent = Intent(this, JarvisVoiceService::class.java)
-        ContextCompat.startForegroundService(this, intent)
+
+        val intent = Intent(
+            this,
+            JarvisVoiceService::class.java
+        )
+
+        ContextCompat.startForegroundService(
+            this,
+            intent
+        )
     }
 }
