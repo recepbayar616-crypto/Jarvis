@@ -1,16 +1,27 @@
 package com.example
 
-import android.app.*
-import android.content.*
-import android.os.*
-import android.speech.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Intent
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import java.util.*
+import java.util.Locale
 
 class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
-    private lateinit var speechRecognizer: SpeechRecognizer
+    private var speechRecognizer: SpeechRecognizer? = null
     private lateinit var textToSpeech: TextToSpeech
+
+    private var waitingForCommand = false
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -27,102 +38,28 @@ class JarvisVoiceService : Service(), TextToSpeech.OnInitListener {
 
         textToSpeech = TextToSpeech(this, this)
 
-        startListening()
+        startWakeWordListening()
     }
 
-    private fun startListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) return
+    private fun startWakeWordListening() {
+        waitingForCommand = false
+        startRecognition()
+    }
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+    private fun startCommandListening() {
+        waitingForCommand = true
 
-        speechRecognizer.setRecognitionListener(object : RecognitionListener {
+        speak("Sizi dinliyorum.")
 
-            override fun onResults(results: Bundle?) {
-                val texts =
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+        handler.postDelayed({
+            startRecognition()
+        }, 1200)
+    }
 
-                val spokenText = texts?.firstOrNull()?.lowercase(Locale("tr", "TR"))
+    private fun startRecognition() {
 
-                if (spokenText != null && spokenText.contains("jarvis")) {
-                    speak("Sizi dinliyorum.")
-                }
-
-                Handler(Looper.getMainLooper()).postDelayed({
-                    startListening()
-                }, 500)
-            }
-
-            override fun onError(error: Int) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    startListening()
-                }, 1000)
-            }
-
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                "tr-TR"
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                false
-            )
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            return
         }
 
-        speechRecognizer.startListening(intent)
-    }
-
-    private fun speak(text: String) {
-        textToSpeech.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "JARVIS_RESPONSE"
-        )
-    }
-
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            textToSpeech.language = Locale("tr", "TR")
-        }
-    }
-
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            "jarvis_channel",
-            "JARVIS Sesli Asistan",
-            NotificationManager.IMPORTANCE_LOW
-        )
-
-        getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(channel)
-    }
-
-    override fun onDestroy() {
-        if (::speechRecognizer.isInitialized) {
-            speechRecognizer.destroy()
-        }
-
-        if (::textToSpeech.isInitialized) {
-            textToSpeech.stop()
-            textToSpeech.shutdown()
-        }
-
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-}
+        try {
