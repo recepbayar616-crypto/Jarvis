@@ -1,233 +1,274 @@
-package com.example.voice
+            val intent =
+                Intent(
+                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                ).apply {
 
-import android.content.Context
-import android.content.Intent
-import android.media.MediaPlayer
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.util.Log
-import com.example.ai.gemini.OpenAITtsClient
-import com.example.data.preferences.JarvisPreferences
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import java.io.File
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
 
-enum class AssistantVoiceState {
-    IDLE,
-    LISTENING,
-    THINKING,
-    SPEAKING,
-    ERROR
-}
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE,
+                        "tr-TR"
+                    )
 
-class JarvisVoiceManager(
-    private val context: Context,
-    private val preferences: JarvisPreferences,
-    private val onVoiceInputRecognized: (String) -> Unit
-) {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                        "tr-TR"
+                    )
 
-    private val _voiceState =
-        MutableStateFlow(AssistantVoiceState.IDLE)
+                    putExtra(
+                        RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                        true
+                    )
 
-    val voiceState: StateFlow<AssistantVoiceState> =
-        _voiceState.asStateFlow()
+                    putExtra(
+                        RecognizerIntent.EXTRA_MAX_RESULTS,
+                        1
+                    )
+                }
 
-    private val _audioRms =
-        MutableStateFlow(0f)
+            speechRecognizer?.startListening(intent)
 
-    val audioRms: StateFlow<Float> =
-        _audioRms.asStateFlow()
-
-    private val _recognizedText =
-        MutableStateFlow("")
-
-    val recognizedText: StateFlow<String> =
-        _recognizedText.asStateFlow()
-
-    private val _statusMessage =
-        MutableStateFlow("JARVIS Çevrimiçi")
-
-    val statusMessage: StateFlow<String> =
-        _statusMessage.asStateFlow()
-
-    private var speechRecognizer: SpeechRecognizer? = null
-
-    private var mediaPlayer: MediaPlayer? = null
-
-    private val ttsClient =
-        OpenAITtsClient(context.applicationContext)
-
-    private val scope =
-        CoroutineScope(Dispatchers.Main)
-
-    private var speechJob: Job? = null
-
-    fun startListening() {
-
-        stopSpeaking()
-
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            _voiceState.value =
+                AssistantVoiceState.LISTENING
 
             _statusMessage.value =
-                "Ses tanıma bu cihazda desteklenmiyor."
+                "Dinliyorum, efendim..."
+
+        } catch (e: Exception) {
+
+            Log.e(
+                "VoiceManager",
+                "Start listening error",
+                e
+            )
 
             _voiceState.value =
                 AssistantVoiceState.ERROR
 
+            _statusMessage.value =
+                "Mikrofon başlatılamadı."
+        }
+    }
+
+    fun stopListening() {
+
+        try {
+            speechRecognizer?.stopListening()
+        } catch (e: Exception) {
+            Log.e(
+                "VoiceManager",
+                "Stop listening error",
+                e
+            )
+        }
+
+        if (
+            _voiceState.value ==
+            AssistantVoiceState.LISTENING
+        ) {
+            _voiceState.value =
+                AssistantVoiceState.IDLE
+
+            _statusMessage.value =
+                "JARVIS Hazır"
+        }
+    }
+
+    fun setThinking() {
+
+        _voiceState.value =
+            AssistantVoiceState.THINKING
+
+        _statusMessage.value =
+            "Analiz ediliyor..."
+    }
+
+    fun speak(text: String) {
+
+        if (
+            !preferences.isAutoSpeakEnabled() ||
+            text.isBlank()
+        ) {
+            _voiceState.value =
+                AssistantVoiceState.IDLE
+
             return
         }
 
+        stopListening()
+
+        speechJob?.cancel()
+
+        speechJob = scope.launch {
+
+            try {
+
+                _voiceState.value =
+                    AssistantVoiceState.SPEAKING
+
+                _statusMessage.value =
+                    "JARVIS Konuşuyor..."
+
+                val audioFile =
+                    ttsClient.generateSpeech(text)
+
+                if (audioFile == null) {
+
+                    Log.e(
+                        "VoiceManager",
+                        "OpenAI TTS ses oluşturamadı."
+                    )
+
+                    _voiceState.value =
+                        AssistantVoiceState.ERROR
+
+                    _statusMessage.value =
+                        "Ses oluşturulamadı."
+
+                    return@launch
+                }
+
+                playAudio(audioFile)
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    "VoiceManager",
+                    "TTS error",
+                    e
+                )
+
+                _voiceState.value =
+                    AssistantVoiceState.ERROR
+
+                _statusMessage.value =
+                    "Ses oluşturulamadı."
+            }
+        }
+    }
+
+    private fun playAudio(file: File) {
+
         try {
 
-            speechRecognizer?.destroy()
+            mediaPlayer?.release()
 
-            speechRecognizer =
-                SpeechRecognizer.createSpeechRecognizer(context)
+            val player =
+                MediaPlayer()
 
-            speechRecognizer?.setRecognitionListener(
-                object : RecognitionListener {
+            mediaPlayer = player
 
-                    override fun onReadyForSpeech(
-                        params: Bundle?
-                    ) {
-                        _voiceState.value =
-                            AssistantVoiceState.LISTENING
-
-                        _statusMessage.value =
-                            "Dinliyorum..."
-                    }
-
-                    override fun onBeginningOfSpeech() {
-                        _statusMessage.value =
-                            "Ses algılandı..."
-                    }
-
-                    override fun onRmsChanged(
-                        rmsdB: Float
-                    ) {
-
-                        val normalized =
-                            ((rmsdB + 2f) / 12f)
-                                .coerceIn(0f, 1f)
-
-                        _audioRms.value =
-                            normalized
-                    }
-
-                    override fun onBufferReceived(
-                        buffer: ByteArray?
-                    ) {
-                    }
-
-                    override fun onEndOfSpeech() {
-
-                        _voiceState.value =
-                            AssistantVoiceState.THINKING
-
-                        _statusMessage.value =
-                            "Analiz ediliyor..."
-                    }
-
-                    override fun onError(
-                        error: Int
-                    ) {
-
-                        _audioRms.value = 0f
-
-                        _voiceState.value =
-                            AssistantVoiceState.IDLE
-
-                        _statusMessage.value =
-                            when (error) {
-
-                                SpeechRecognizer.ERROR_NO_MATCH ->
-                                    "Ses anlaşılamadı, tekrar deneyin."
-
-                                SpeechRecognizer.ERROR_NETWORK ->
-                                    "Ağ bağlantı hatası."
-
-                                SpeechRecognizer.ERROR_AUDIO ->
-                                    "Ses yakalama hatası."
-
-                                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                                    "Mikrofon izni gerekli."
-
-                                else ->
-                                    "Dinleme zaman aşımı."
-                            }
-                    }
-
-                    override fun onResults(
-                        results: Bundle?
-                    ) {
-
-                        _audioRms.value = 0f
-
-                        val matches =
-                            results?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
-                            )
-
-                        val text =
-                            matches
-                                ?.firstOrNull()
-                                ?.trim()
-
-                        if (!text.isNullOrBlank()) {
-
-                            _recognizedText.value =
-                                text
-
-                            _voiceState.value =
-                                AssistantVoiceState.THINKING
-
-                            _statusMessage.value =
-                                "İşleniyor: \"$text\""
-
-                            onVoiceInputRecognized(text)
-
-                        } else {
-
-                            _voiceState.value =
-                                AssistantVoiceState.IDLE
-
-                            _statusMessage.value =
-                                "JARVIS Hazır"
-                        }
-                    }
-
-                    override fun onPartialResults(
-                        partialResults: Bundle?
-                    ) {
-
-                        val matches =
-                            partialResults?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
-                            )
-
-                        val text =
-                            matches?.firstOrNull()
-
-                        if (!text.isNullOrBlank()) {
-                            _recognizedText.value = text
-                        }
-                    }
-
-                    override fun onEvent(
-                        eventType: Int,
-                        params: Bundle?
-                    ) {
-                    }
-                }
+            player.setDataSource(
+                file.absolutePath
             )
 
-            val intent =
-                Intent(
-                   
+            player.setOnCompletionListener {
+
+                _voiceState.value =
+                    AssistantVoiceState.IDLE
+
+                _statusMessage.value =
+                    "JARVIS Hazır"
+
+                player.release()
+
+                mediaPlayer = null
+
+                file.delete()
+            }
+
+            player.setOnErrorListener { _, _, _ ->
+
+                _voiceState.value =
+                    AssistantVoiceState.ERROR
+
+                _statusMessage.value =
+                    "Ses oynatılamadı."
+
+                player.release()
+
+                mediaPlayer = null
+
+                file.delete()
+
+                true
+            }
+
+            player.prepare()
+            player.start()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                "VoiceManager",
+                "Audio playback error",
+                e
+            )
+
+            mediaPlayer = null
+
+            file.delete()
+
+            _voiceState.value =
+                AssistantVoiceState.ERROR
+
+            _statusMessage.value =
+                "Ses oynatılamadı."
+        }
+    }
+
+    fun stopSpeaking() {
+
+        speechJob?.cancel()
+
+        try {
+            mediaPlayer?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
+            mediaPlayer?.release()
+        } catch (_: Exception) {
+        }
+
+        mediaPlayer = null
+
+        _voiceState.value =
+            AssistantVoiceState.IDLE
+
+        _statusMessage.value =
+            "JARVIS Hazır"
+    }
+
+    fun destroy() {
+
+        try {
+            speechRecognizer?.cancel()
+        } catch (_: Exception) {
+        }
+
+        try {
+            speechRecognizer?.destroy()
+        } catch (_: Exception) {
+        }
+
+        speechRecognizer = null
+
+        try {
+            mediaPlayer?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
+            mediaPlayer?.release()
+        } catch (_: Exception) {
+        }
+
+        mediaPlayer = null
+
+        speechJob?.cancel()
+    }
+}
