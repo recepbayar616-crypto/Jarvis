@@ -5,10 +5,13 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -19,6 +22,7 @@ jobs:
         with:
           java-version: "17"
           distribution: "temurin"
+          cache: gradle
 
       - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
@@ -27,16 +31,22 @@ jobs:
 
       - name: Create .env
         env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" > .env
+          printf 'YOUTUBE_API_KEY=%s\n' "$YOUTUBE_API_KEY" > .env
+          printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> .env
+          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
 
       - name: Build APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace --console=plain
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: jarvis-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
